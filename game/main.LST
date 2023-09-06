@@ -1,0 +1,321 @@
+C51 COMPILER V9.51   MAIN                                                                  09/05/2023 22:07:29 PAGE 1   
+
+
+C51 COMPILER V9.51, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN main.OBJ
+COMPILER INVOKED BY: D:\Program Files\keil\C51\BIN\C51.EXE main.c BROWSE DEBUG OBJECTEXTEND TABS(2)
+
+line level    source
+
+   1          #include "../inc/STC15F2K60S2.H"        //必须。
+   2          #include "../inc/sys.H"                 //必须。
+   3          #include "../inc/displayer.H"
+   4          #include "../inc/key.H"
+   5          #include "../inc/adc.h"
+   6          #include "../inc/M24C02.h"
+   7          #include "../inc/beep.H"
+   8          
+   9          code unsigned long SysClock=11059200;         //必须。定义系统工作时钟频率(Hz)，用户必须修改成与实际工作频
+             -率（下载时选择的）一致
+  10          #ifdef _displayer_H_                          //显示模块选用时必须。（数码管显示译码表，用戶可修改、增加等
+             -） 
+  11          code char decode_table[]= {0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f,0x00,0x08,0x40,0x01, 0x41, 0x
+             -48,
+  12                                     /* 序号:   0   1    2     3    4     5    6    7   8    9   10    11   12   13    1
+             -4     15     */
+  13                                     /* 显示:   0   1    2    3    4     5    6    7   8    9  (无)   下-  中-  上- 
+             - 上中-  中下-   */
+  14                                     0x3f|0x80,0x06|0x80,0x5b|0x80,0x4f|0x80,0x66|0x80,0x6d|0x80,0x7d|0x80,0x07|0x80
+             -,0x7f|0x80,0x6f|0x80,0x71,0x77,0x06,0x38,0x79,0x3f
+  15                                    };
+  16          /* 带小数点     0         1         2         3         4         5         6         7         8         
+             -9        */
+  17          #endif
+  18          
+  19          #define uint unsigned int
+  20          #define uchar unsigned char
+  21          #define BLOCKNUM 20
+  22          
+  23          uint rand = 0;
+  24          uint score = 0;
+  25          uint maxscore = 0;
+  26          uint sttime = 0;
+  27          uint edtime = 0;
+  28          uint totaltime = 0;
+  29          uint mi = 0;
+  30          uchar mode = 0;
+  31          uchar t = 0;
+  32          uchar st = 0;
+  33          uchar ed = 0;
+  34          uchar query1 = 0;
+  35          uchar query2 = 0;
+  36          uchar block = BLOCKNUM;
+  37          uchar NVM_addr1 = 0x00;
+  38          uchar NVM_addr2 = 0x01;
+  39          uchar NVM_addr3 = 0x02;
+  40          uchar NVM_addr4 = 0x03;
+  41          uchar NVM_data1 = 0;
+  42          uchar NVM_data2 = 0;
+  43          uchar NVM_data3 = 0;
+  44          uchar NVM_data4 = 0;
+  45          
+  46          char c[8] = {12,13,11,12,13,11,12,13};
+  47          
+  48          /*
+C51 COMPILER V9.51   MAIN                                                                  09/05/2023 22:07:29 PAGE 2   
+
+  49          低8度 131 147 165 175 196 220 247
+  50          中8度 262 294 330 349 392 440 494
+  51          高8度 523 587 659 698 784 880 988
+  52          */
+  53          
+  54          code uint xxx[28] = {262, 262, 392, 392, 440, 440, 392,
+  55                               349, 349, 330, 330, 293, 294, 262,
+  56                               392, 392, 349, 349, 330, 330, 294,
+  57                               392, 392, 349, 349, 330, 330, 294
+  58                              };
+  59          code uint lzlh[32] = {262, 294, 330, 262, 262, 294, 330, 262,
+  60                                330, 349, 392, 330, 349, 392,
+  61                                392, 440, 392, 349, 330, 262, 392, 440, 392, 349, 330, 262,
+  62                                262, 196, 262, 262, 196, 262
+  63                               };
+  64          
+  65          uint *music = xxx;
+  66          uchar musicid = 0;
+  67          uchar musicsize = 28;
+  68          
+  69          void Delay10ms() {    //@11.0592MHz
+  70   1        unsigned char i, j;
+  71   1        i = 108;
+  72   1        j = 145;
+  73   1        do {
+  74   2          while (--j);
+  75   2        } while (--i);
+  76   1      }
+  77          
+  78          void Move() {
+  79   1        int i;
+  80   1        SetBeep(music[mi], 20);
+  81   1        mi = (mi + 1) % musicsize;
+  82   1        t = rand % 3 + 11;
+  83   1        for(i = 7; i > 0; i--) {
+  84   2          c[i] = c[i - 1];
+  85   2        }
+  86   1        c[0] = t;
+  87   1        Seg7Print(c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]);
+  88   1      }
+  89          
+  90          void UpdateMaxScore() {
+  91   1        NVM_data1 = M24C02_Read(NVM_addr1);
+  92   1        NVM_data2 = M24C02_Read(NVM_addr2);
+  93   1        if(score > (NVM_data2 << 8) + NVM_data1) {
+  94   2          M24C02_Write(NVM_addr1, score % 256);
+  95   2          Delay10ms();
+  96   2          M24C02_Write(NVM_addr2, score / 256);
+  97   2        }
+  98   1      }
+  99          
+ 100          void ReadMaxScore() {
+ 101   1        NVM_data1 = M24C02_Read(NVM_addr1);
+ 102   1        NVM_data2 = M24C02_Read(NVM_addr2);
+ 103   1        maxscore = (NVM_data2 << 8) + NVM_data1;
+ 104   1        Seg7Print(10, 10, 10, 10, maxscore / 1000 % 10, maxscore / 100 % 10, maxscore / 10 % 10, maxscore % 10);
+ 105   1      }
+ 106          
+ 107          void UpdateMinTime() {
+ 108   1        NVM_data3 = M24C02_Read(NVM_addr3);
+ 109   1        NVM_data4 = M24C02_Read(NVM_addr4);
+ 110   1        if(totaltime < NVM_data3 * 1000 + NVM_data4 * 10) {
+C51 COMPILER V9.51   MAIN                                                                  09/05/2023 22:07:29 PAGE 3   
+
+ 111   2          M24C02_Write(NVM_addr3, totaltime / 1000);
+ 112   2          Delay10ms();
+ 113   2          M24C02_Write(NVM_addr4, totaltime % 1000 / 10);
+ 114   2        }
+ 115   1      }
+ 116          
+ 117          void ReadMinTime() {
+ 118   1        NVM_data3 = M24C02_Read(NVM_addr3);
+ 119   1        NVM_data4 = M24C02_Read(NVM_addr4);
+ 120   1        Seg7Print(10, 10, 10, 10, NVM_data3 / 10, NVM_data3 % 10 + 16, NVM_data4 / 10, NVM_data4 % 10);
+ 121   1      }
+ 122          void mykey_callback() {
+ 123   1        if(st == 0) {
+ 124   2          if(GetKeyAct(enumKey1) == enumKeyPress) {
+ 125   3            M24C02_Write(NVM_addr1, 0);
+ 126   3            Delay10ms();
+ 127   3            M24C02_Write(NVM_addr2, 0);
+ 128   3          }
+ 129   2          if(GetKeyAct(enumKey2) == enumKeyPress) {
+ 130   3            M24C02_Write(NVM_addr3, 99);
+ 131   3            Delay10ms();
+ 132   3            M24C02_Write(NVM_addr4, 99);
+ 133   3          }
+ 134   2        }
+ 135   1        if(st == 1 && ed == 0 && mode == 0) {
+ 136   2          if(GetKeyAct(enumKey1) == enumKeyPress) {
+ 137   3            if(c[7] == 13) {
+ 138   4              Move();
+ 139   4              score++;
+ 140   4            } else {
+ 141   4              Seg7Print(10, 10, 10, 10, score / 1000 % 10, score / 100 % 10, score / 10 % 10, score % 10);
+ 142   4              UpdateMaxScore();
+ 143   4              ed = 1;
+ 144   4            }
+ 145   3          } else if(GetKeyAct(enumKey2) == enumKeyPress) {
+ 146   3            if(c[7] == 12) {
+ 147   4              Move();
+ 148   4              score++;
+ 149   4            } else {
+ 150   4              Seg7Print(10, 10, 10, 10, score / 1000 % 10, score / 100 % 10, score / 10 % 10, score % 10);
+ 151   4              UpdateMaxScore();
+ 152   4              ed = 1;
+ 153   4            }
+ 154   3          }
+ 155   2        }
+ 156   1        if(st == 1 && ed == 0 && mode == 1) {
+ 157   2          if(GetKeyAct(enumKey1) == enumKeyPress && block > 0) {
+ 158   3            if(c[7] == 13) {
+ 159   4              Move();
+ 160   4              block--;
+ 161   4            } else {
+ 162   4              Seg7Print(10, 10, 26, 27, 28, 29, 30, 31);
+ 163   4              ed = 1;
+ 164   4              block = BLOCKNUM;
+ 165   4            }
+ 166   3          }
+ 167   2          if(GetKeyAct(enumKey2) == enumKeyPress && block > 0) {
+ 168   3            if(c[7] == 12) {
+ 169   4              Move();
+ 170   4              block--;
+ 171   4            } else {
+ 172   4              Seg7Print(10, 10, 26, 27, 28, 29, 30, 31);
+C51 COMPILER V9.51   MAIN                                                                  09/05/2023 22:07:29 PAGE 4   
+
+ 173   4              ed = 1;
+ 174   4              block = BLOCKNUM;
+ 175   4            }
+ 176   3          }
+ 177   2        }
+ 178   1      }
+ 179          
+ 180          void mynav_callback() {
+ 181   1        if(st == 0) {
+ 182   2          if(GetAdcNavAct(enumAdcNavKeyUp) == enumKeyPress) {
+ 183   3            query1 = 0;
+ 184   3            query2 = 0;
+ 185   3            if(mode == 0) mode = 1;
+ 186   3          } else if(GetAdcNavAct(enumAdcNavKeyDown) == enumKeyPress) {
+ 187   3            query1 = 0;
+ 188   3            query2 = 0;
+ 189   3            if(mode == 1) mode = 0;
+ 190   3          } else if(GetAdcNavAct(enumAdcNavKeyLeft) == enumKeyPress) {
+ 191   3            query1 = 1;
+ 192   3            query2 = 0;
+ 193   3            ReadMaxScore();
+ 194   3          } else if(GetAdcNavAct(enumAdcNavKeyRight) == enumKeyPress) {
+ 195   3            query1 = 0;
+ 196   3            query2 = 1;
+ 197   3            ReadMinTime();
+ 198   3          } else if(GetAdcNavAct(enumAdcNavKeyCenter) == enumKeyPress) {
+ 199   3            st = 1;
+ 200   3            sttime = rand;
+ 201   3            Seg7Print(c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7]);
+ 202   3          } else if(GetAdcNavAct(enumAdcNavKey3) == enumKeyPress) {
+ 203   3            musicid = (musicid + 1) % 2;
+ 204   3            if(musicid == 0) {
+ 205   4              music = xxx;
+ 206   4              musicsize = 28;
+ 207   4            } else if(musicid == 1) {
+ 208   4              music = lzlh;
+ 209   4              musicsize = 32;
+ 210   4            }
+ 211   3          }
+ 212   2        }
+ 213   1        if(st == 1 && ed == 0 && mode == 0) {
+ 214   2          if(GetAdcNavAct(enumAdcNavKey3) == enumKeyPress) {
+ 215   3            if(c[7] == 11) {
+ 216   4              Move();
+ 217   4              score++;
+ 218   4            } else {
+ 219   4              Seg7Print(10, 10, 10, 10, score / 1000 % 10, score / 100 % 10, score / 10 % 10, score % 10);
+ 220   4              UpdateMaxScore();
+ 221   4              ed = 1;
+ 222   4            }
+ 223   3          }
+ 224   2        }
+ 225   1        if(st == 1 && ed == 0 && mode == 1) {
+ 226   2          if(GetAdcNavAct(enumAdcNavKey3) == enumKeyPress) {
+ 227   3            if(c[7] == 11) {
+ 228   4              Move();
+ 229   4              block--;
+ 230   4            } else {
+ 231   4              Seg7Print(10, 10, 26, 27, 28, 29, 30, 31);
+ 232   4              ed = 1;
+ 233   4              block = BLOCKNUM;
+ 234   4            }
+C51 COMPILER V9.51   MAIN                                                                  09/05/2023 22:07:29 PAGE 5   
+
+ 235   3          }
+ 236   2        }
+ 237   1        if(ed == 1) {
+ 238   2          if(GetAdcNavAct(enumAdcNavKeyCenter) == enumKeyPress) {
+ 239   3            score = 0;
+ 240   3            st = 0;
+ 241   3            ed = 0;
+ 242   3            query1 = 0;
+ 243   3            query2 = 0;
+ 244   3            mi = 0;
+ 245   3          }
+ 246   2        }
+ 247   1      }
+ 248          
+ 249          void my10mS_callback() {
+ 250   1        rand++;
+ 251   1        if(!st && !query1 && !query2) {
+ 252   2          Seg7Print(10, 10, 10, 10, 10, 10, musicid, mode);
+ 253   2        }
+ 254   1        if(block == 0) {
+ 255   2          ed = 1;
+ 256   2          query2 = 1;
+ 257   2          edtime = rand;
+ 258   2          totaltime = (edtime - sttime) * 10;
+ 259   2          Seg7Print(10, 10, 10, 10, totaltime / 10000 % 10, totaltime / 1000 % 10 + 16, totaltime / 100 % 10, tota
+             -ltime / 10 % 10);
+ 260   2          UpdateMinTime();
+ 261   2          block = BLOCKNUM;
+ 262   2        }
+ 263   1      }
+ 264          
+ 265          void main() {
+ 266   1        DisplayerInit();
+ 267   1        KeyInit();
+ 268   1        AdcInit(ADCincEXT);
+ 269   1        BeepInit();
+ 270   1      
+ 271   1        SetDisplayerArea(0, 7);
+ 272   1        LedPrint(0);
+ 273   1      
+ 274   1        SetEventCallBack(enumEventNav, mynav_callback);
+ 275   1        SetEventCallBack(enumEventKey, mykey_callback);
+ 276   1        SetEventCallBack(enumEventSys10mS, my10mS_callback);
+ 277   1      
+ 278   1        MySTC_Init();
+ 279   1        while(1) {
+ 280   2          MySTC_OS();
+ 281   2        }
+ 282   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1514    ----
+   CONSTANT SIZE    =    156    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     42    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
